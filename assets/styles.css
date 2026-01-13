@@ -1,12 +1,12 @@
 :root {
   font-family: "Inter", "Segoe UI", system-ui, sans-serif;
-  --bg: #0f172a;
-  --panel: #111827;
-  --panel-light: #1f2937;
-  --text: #f8fafc;
-  --muted: #cbd5f5;
-  --accent: #38bdf8;
-  --border: rgba(148, 163, 184, 0.2);
+  --bg: #f8fafc;
+  --panel: #ffffff;
+  --panel-light: #f1f5f9;
+  --text: #0f172a;
+  --muted: #64748b;
+  --accent: #2563eb;
+  --border: #e2e8f0;
 }
 
 * {
@@ -31,21 +31,22 @@ header {
   justify-content: space-between;
   align-items: center;
   gap: 2rem;
-  padding: 1.5rem 2.5rem;
+  padding: 1.2rem 2rem;
   border-bottom: 1px solid var(--border);
-  background: linear-gradient(90deg, #0f172a 0%, #111827 100%);
+  background: #ffffff;
 }
 
 header h1 {
   margin: 0;
-  font-size: 1.6rem;
+  font-size: 1.3rem;
 }
 
 header p {
   margin: 0.35rem 0 0;
   color: var(--muted);
-  max-width: 46rem;
+  max-width: 44rem;
   line-height: 1.5;
+  font-size: 0.9rem;
 }
 
 .controls {
@@ -58,17 +59,17 @@ button {
   color: var(--text);
   border: 1px solid transparent;
   border-radius: 8px;
-  padding: 0.55rem 1.4rem;
+  padding: 0.45rem 1.1rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
 }
 
 button:hover {
   border-color: var(--accent);
   color: var(--accent);
-  background: rgba(56, 189, 248, 0.1);
+  background: rgba(37, 99, 235, 0.08);
 }
 
 button:active {
@@ -78,13 +79,13 @@ button:active {
 .content {
   flex: 1;
   display: grid;
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: 280px 1fr;
   min-height: 0;
 }
 
 aside {
   background: var(--panel);
-  padding: 1.5rem;
+  padding: 1.25rem;
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -92,7 +93,7 @@ aside {
 }
 
 aside h2 {
-  font-size: 1.1rem;
+  font-size: 1rem;
   margin-top: 0;
 }
 
@@ -109,7 +110,7 @@ aside h2 {
   display: flex;
   align-items: center;
   gap: 0.7rem;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   line-height: 1.4;
   min-height: 20px;
 }
@@ -130,24 +131,26 @@ aside h2 {
 }
 
 .panel {
-  background: rgba(148, 163, 184, 0.08);
-  border-radius: 16px;
-  padding: 1rem;
+  background: #f8fafc;
+  border-radius: 14px;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
 }
 
 .panel h3 {
   margin-top: 0;
   margin-bottom: 0.5rem;
+  font-size: 0.95rem;
 }
 
 .selection {
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   color: var(--muted);
   margin-bottom: 0.8rem;
 }
 
 .hint-text {
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   color: var(--muted);
   line-height: 1.6;
   margin-bottom: 1rem;
@@ -157,10 +160,10 @@ aside h2 {
 .edit-dialog {
   position: fixed;
   background: var(--panel);
-  border: 2px solid var(--accent);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 1.5rem;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  padding: 1.1rem;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
   z-index: 1000;
   min-width: 280px;
   flex-direction: column;
@@ -170,7 +173,7 @@ aside h2 {
 .context-menu h4,
 .edit-dialog h4 {
   margin: 0 0 0.5rem;
-  font-size: 1.1rem;
+  font-size: 0.95rem;
 }
 
 .context-actions,
@@ -187,12 +190,12 @@ aside h2 {
 
 #label-input {
   width: 100%;
-  padding: 0.5rem;
+  padding: 0.45rem;
   background: var(--panel-light);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);
-  font-size: 1rem;
+  font-size: 0.85rem;
 }
 
 #label-input:focus {
@@ -225,13 +228,34 @@ aside h2 {
 
 .Select-option.is-focused,
 .dash-dropdown-option:hover {
-  background: rgba(56, 189, 248, 0.2) !important;
+  background: rgba(37, 99, 235, 0.12) !important;
   color: var(--accent) !important;
 }
 
 .Select-option.is-selected {
   background: var(--accent) !important;
   color: var(--bg) !important;
+}
+
+.cy-context-menus-cxt-menu {
+  background: var(--panel) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.15) !important;
+  padding: 0.3rem 0 !important;
+  min-width: 180px !important;
+  z-index: 9999 !important;
+}
+
+.cy-context-menus-cxt-menuitem {
+  padding: 0.45rem 0.9rem !important;
+  font-size: 0.82rem !important;
+  color: var(--text) !important;
+}
+
+.cy-context-menus-cxt-menuitem:hover {
+  background: var(--panel-light) !important;
+  color: var(--accent) !important;
 }
 
 .hint {
@@ -246,8 +270,51 @@ aside h2 {
 main {
   position: relative;
   overflow: hidden;
-  background: radial-gradient(circle at top, rgba(56, 189, 248, 0.15), transparent 55%),
-    radial-gradient(circle at bottom, rgba(56, 189, 248, 0.08), transparent 60%);
+  background: radial-gradient(circle at top, rgba(37, 99, 235, 0.08), transparent 55%),
+    radial-gradient(circle at bottom, rgba(148, 163, 184, 0.25), transparent 65%);
+}
+
+.hierarchy-tree {
+  max-height: 240px;
+  overflow: auto;
+}
+
+.hierarchy-list {
+  list-style: none;
+  padding-left: 0.9rem;
+  margin: 0.4rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.hierarchy-node > .hierarchy-list {
+  margin-top: 0.35rem;
+  border-left: 1px dashed var(--border);
+  padding-left: 0.75rem;
+}
+
+.hierarchy-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.hierarchy-title {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.hierarchy-type {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.hierarchy-empty {
+  font-size: 0.8rem;
+  color: var(--muted);
+  padding: 0.4rem 0;
 }
 
 @media (max-width: 960px) {
