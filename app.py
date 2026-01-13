@@ -183,7 +183,8 @@ def default_stylesheet() -> List[Dict]:
 
 
 def initial_elements() -> List[Dict]:
-    return []
+    node_id = "node-root"
+    return [make_node(node_id, "Building", "building")]
 
 
 def legend_items() -> List[html.Li]:
@@ -340,6 +341,7 @@ app.layout = html.Div(
         dcc.Store(id="selected-store", data="building"),
         dcc.Store(id="last-tap", data={"timestamp": 0, "node": None}),
         dcc.Store(id="right-click-node", data=None),
+        dcc.Store(id="canvas-click-store", data=None),
         html.Div(id="selection-label", className="selection", style={"display": "none"}),
         html.Div(
             style={"display": "none"},
@@ -347,6 +349,7 @@ app.layout = html.Div(
                 html.Button("Edit Title", id="edit-title-btn", n_clicks=0),
                 html.Button("Change Type", id="show-type-menu", n_clicks=0),
                 html.Button("Toggle Collapse", id="toggle-collapse", n_clicks=0),
+                html.Button("Canvas DblClick", id="canvas-dblclick", n_clicks=0),
             ],
         ),
         html.Div(
@@ -390,6 +393,28 @@ app.layout = html.Div(
             ],
         ),
     ],
+)
+
+app.clientside_callback(
+    """
+    function(n_clicks) {
+        if (!n_clicks) {
+            return window.dash_clientside.no_update;
+        }
+        const payload = window._canvasDblClick;
+        if (!payload || payload.x === undefined || payload.y === undefined) {
+            return window.dash_clientside.no_update;
+        }
+        return {
+            x: payload.x,
+            y: payload.y,
+            timeStamp: payload.timeStamp || Date.now()
+        };
+    }
+    """,
+    Output("canvas-click-store", "data"),
+    Input("canvas-dblclick", "n_clicks"),
+    prevent_initial_call=True,
 )
 
 
@@ -465,6 +490,34 @@ def connect_nodes(
         return elements
 
     return elements + [make_edge(selected, target_id)]
+
+
+@callback(
+    Output("elements-store", "data", allow_duplicate=True),
+    Input("canvas-click-store", "data"),
+    State("elements-store", "data"),
+    prevent_initial_call=True,
+)
+def handle_canvas_double_click(
+    canvas_click: Optional[Dict],
+    elements: List[Dict],
+) -> List[Dict]:
+    if not canvas_click:
+        return elements
+
+    x = canvas_click.get("x")
+    y = canvas_click.get("y")
+    if x is None or y is None:
+        return elements
+
+    node_id = f"node-{uuid.uuid4().hex[:6]}"
+    new_node = make_node(
+        node_id,
+        "New Node",
+        "sensors",
+        position={"x": x, "y": y},
+    )
+    return elements + [new_node]
 
 
 @callback(
