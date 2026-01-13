@@ -153,10 +153,9 @@ def default_stylesheet() -> List[Dict]:
             "style": {
                 "width": 160,
                 "height": 96,
-                "font-size": 10,
+                "font-size": 11,
                 "padding": 10,
                 "text-max-width": "140px",
-                "line-height": 1.1,
             },
         },
         {
@@ -177,10 +176,7 @@ def default_stylesheet() -> List[Dict]:
         stylesheet.append(
             {
                 "selector": f'node[type = "{node_type.key}"]',
-                "style": {
-                    "border-color": node_type.color,
-                    "background-color": tint_color(node_type.color, alpha),
-                },
+                "style": {"border-color": node_type.color},
             }
         )
     return stylesheet
@@ -251,7 +247,7 @@ app.layout = html.Div(
                     children=[
                         html.H1("Building Systems Graph"),
                         html.P(
-                            "Double-click the canvas to add nodes. Right-click a node to edit its title or change type. "
+                            "Double-click a node to add a child. Right-click a node to edit its title or change type. "
                             "Enable connection mode to link nodes."
                         ),
                     ]
@@ -282,7 +278,7 @@ app.layout = html.Div(
                                     children=[
                                         "• Single-click to select a node",
                                         html.Br(),
-                                        "• Double-click the canvas to add nodes",
+                                        "• Double-click a node to add a child",
                                         html.Br(),
                                         "• Use 'Edit Title' or 'Change Type' buttons",
                                     ],
@@ -315,14 +311,14 @@ app.layout = html.Div(
                             className="panel hint",
                             children=[
                                 html.H3("Quick Tips"),
-                                        html.Ul(
-                                            [
-                                                html.Li("Double-click the canvas to add nodes."),
-                                                html.Li("Right-click a node to edit or change type."),
-                                                html.Li("Enable connection mode to link nodes."),
-                                                html.Li("Mouse wheel zooms, drag to pan canvas."),
-                                            ]
-                                        ),
+                                html.Ul(
+                                    [
+                                        html.Li("Double-click a node to add a child."),
+                                        html.Li("Right-click a node to edit or change type."),
+                                        html.Li("Enable connection mode to link nodes."),
+                                        html.Li("Mouse wheel zooms, drag to pan canvas."),
+                                    ]
+                                ),
                             ],
                         ),
                     ]
@@ -361,9 +357,8 @@ app.layout = html.Div(
         ),
         dcc.Store(id="elements-store", data=initial_elements()),
         dcc.Store(id="collapsed-store", data=[]),
-        dcc.Store(id="selected-store", data=None),
-        dcc.Store(id="canvas-dblclick-store", data=None),
-        html.Button(id="canvas-dblclick", style={"display": "none"}, n_clicks=0),
+        dcc.Store(id="selected-store", data="building"),
+        dcc.Store(id="last-tap", data={"timestamp": 0, "node": None}),
         dcc.Store(id="right-click-node", data=None),
         html.Div(
             id="context-menu",
@@ -423,52 +418,45 @@ app.clientside_callback(
 
 
 @callback(
-    Output("selected-store", "data"),
+    Output("elements-store", "data"),
+    Output("selected-store", "data", allow_duplicate=True),
+    Output("last-tap", "data"),
     Input("graph", "tapNodeData"),
+    State("graph", "tapNode"),
+    State("elements-store", "data"),
     State("selected-store", "data"),
+    State("last-tap", "data"),
     prevent_initial_call=True,
 )
 def handle_node_tap(
     tap_node_data: Optional[Dict],
-    selected: Optional[str],
-) -> Optional[str]:
-    if not tap_node_data:
-        return selected
-
-    return tap_node_data.get("id")
-
-
-@callback(
-    Output("elements-store", "data", allow_duplicate=True),
-    Output("selected-store", "data", allow_duplicate=True),
-    Input("canvas-dblclick-store", "data"),
-    State("elements-store", "data"),
-    State("selected-store", "data"),
-    prevent_initial_call=True,
-)
-def handle_canvas_double_click(
-    click_data: Optional[Dict],
+    tap_node: Optional[Dict],
     elements: List[Dict],
-    selected: Optional[str],
-) -> Tuple[List[Dict], Optional[str]]:
-    if not click_data:
-        return elements, selected
+    selected: str,
+    last_tap: Dict,
+) -> Tuple[List[Dict], str, Dict]:
+    if not tap_node_data:
+        return elements, selected, last_tap
 
-    building_nodes = [
-        element for element in elements if element.get("data", {}).get("type") == "building"
-    ]
-    building_id = building_nodes[0]["data"]["id"] if building_nodes else None
-    position = {"x": click_data.get("x", 0), "y": click_data.get("y", 0)}
+    tapped_id = tap_node_data.get("id")
+    timestamp = _now_ms()
+    last_node = last_tap.get("node")
+    last_timestamp = last_tap.get("timestamp", 0)
 
-    if not building_id:
-        node_id = f"building-{uuid.uuid4().hex[:6]}"
-        new_node = make_node(node_id, "Main Building", "building", position=position)
-        return elements + [new_node], node_id
+    if last_node == tapped_id and (timestamp - last_timestamp) < 400:
+        position = None
+        if tap_node:
+            position = tap_node.get("position")
+        if position:
+            position = {
+                "x": position.get("x", 0) + 60,
+                "y": position.get("y", 0) + 40,
+            }
+        node_id = f"node-{uuid.uuid4().hex[:6]}"
+        new_node = make_node(node_id, "New Node", "sensors", parent=tapped_id, position=position)
+        return elements + [new_node], node_id, {"node": node_id, "timestamp": 0}
 
-    node_id = f"node-{uuid.uuid4().hex[:6]}"
-    parent = selected or building_id
-    new_node = make_node(node_id, "New Node", "sensors", parent=parent, position=position)
-    return elements + [new_node], node_id
+    return elements, tapped_id, {"node": tapped_id, "timestamp": timestamp}
 
 
 @callback(
@@ -483,9 +471,9 @@ def connect_nodes(
     connect_mode: List[str],
     tap_node_data: Optional[Dict],
     elements: List[Dict],
-    selected: Optional[str],
+    selected: str,
 ) -> List[Dict]:
-    if not tap_node_data or "on" not in connect_mode or not selected:
+    if not tap_node_data or "on" not in connect_mode:
         return elements
 
     target_id = tap_node_data.get("id")
@@ -538,8 +526,6 @@ def handle_context_action(
 
     menu_item = context_data.get("menuItemId")
     node_id = context_data.get("elementId")
-    if not node_id:
-        return {"display": "none"}, no_update, None, {"display": "none"}, "", no_update
 
     current_type = "building"
     current_label = ""
@@ -591,11 +577,9 @@ def handle_context_action(
 )
 def show_type_dialog(
     _clicks: int,
-    selected: Optional[str],
+    selected: str,
     elements: List[Dict],
 ) -> Tuple[Dict, str, Optional[str]]:
-    if not selected:
-        return {"display": "none"}, "building", None
     current_type = "building"
     for element in elements:
         data = element.get("data", {})
@@ -620,11 +604,9 @@ def show_type_dialog(
 )
 def show_edit_dialog(
     _clicks: int,
-    selected: Optional[str],
+    selected: str,
     elements: List[Dict],
 ) -> Tuple[Dict, str, str]:
-    if not selected:
-        return {"display": "none"}, "", ""
     current_label = ""
     for element in elements:
         data = element.get("data", {})
