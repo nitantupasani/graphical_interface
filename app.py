@@ -111,6 +111,14 @@ def apply_visibility(elements: List[Dict], collapsed: Set[str]) -> List[Dict]:
     return visible_elements
 
 
+def tint_color(hex_color: str, alpha: float) -> str:
+    hex_color = hex_color.lstrip("#")
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    return f"rgba({r}, {g}, {b}, {alpha})"
+
+
 def default_stylesheet() -> List[Dict]:
     stylesheet = [
         {
@@ -164,6 +172,7 @@ def default_stylesheet() -> List[Dict]:
         {"selector": ".hidden", "style": {"display": "none"}},
     ]
     for node_type in NODE_TYPES:
+        alpha = 0.1 if node_type.key == "building" else 0.14
         stylesheet.append(
             {
                 "selector": f'node[type = "{node_type.key}"]',
@@ -174,9 +183,7 @@ def default_stylesheet() -> List[Dict]:
 
 
 def initial_elements() -> List[Dict]:
-    return [
-        make_node("building", "Main Building", "building"),
-    ]
+    return []
 
 
 def legend_items() -> List[html.Li]:
@@ -396,6 +403,19 @@ app.layout = html.Div(
     ],
 )
 
+app.clientside_callback(
+    """
+    function(n_clicks) {
+        if (!n_clicks) {
+            return window.dash_clientside.no_update;
+        }
+        return window._canvasDblClick || null;
+    }
+    """,
+    Output("canvas-dblclick-store", "data"),
+    Input("canvas-dblclick", "n_clicks"),
+)
+
 
 @callback(
     Output("elements-store", "data"),
@@ -606,8 +626,10 @@ def show_edit_dialog(
 def toggle_collapse(
     _n_clicks: int,
     collapsed: List[str],
-    selected: str,
+    selected: Optional[str],
 ) -> List[str]:
+    if not selected:
+        return collapsed
     collapsed_set = set(collapsed)
     if selected in collapsed_set:
         collapsed_set.remove(selected)
@@ -631,7 +653,7 @@ def handle_label_edit(
     save_clicks: int,
     cancel_clicks: int,
     new_label: str,
-    selected: str,
+    selected: Optional[str],
     elements: List[Dict],
 ) -> Tuple[List[Dict], Dict, str]:
     ctx = dash.callback_context
@@ -643,7 +665,7 @@ def handle_label_edit(
     if trigger_id == "cancel-label":
         return elements, {"display": "none"}, ""
 
-    if trigger_id == "save-label" and new_label:
+    if trigger_id == "save-label" and new_label and selected:
         updated: List[Dict] = []
         for element in elements:
             data = element.get("data", {})
@@ -674,7 +696,7 @@ def handle_context_menu(
     apply_clicks: int,
     cancel_clicks: int,
     type_key: str,
-    selected: str,
+    selected: Optional[str],
     right_click_node: Optional[str],
     elements: List[Dict],
 ) -> Tuple[List[Dict], Dict]:
@@ -690,6 +712,16 @@ def handle_context_menu(
     if trigger_id == "context-apply":
         # Use right-click node if available, otherwise use selected
         target_node = right_click_node if right_click_node else selected
+        if not target_node:
+            return elements, {"display": "none"}
+        if type_key == "building":
+            existing_building = any(
+                element.get("data", {}).get("type") == "building"
+                and element.get("data", {}).get("id") != target_node
+                for element in elements
+            )
+            if existing_building:
+                return elements, {"display": "none"}
         updated: List[Dict] = []
         for element in elements:
             data = element.get("data", {})
@@ -725,7 +757,7 @@ def handle_context_menu(
 def sync_graph(
     elements: List[Dict],
     collapsed: List[str],
-    selected: str,
+    selected: Optional[str],
     _fit_clicks: int,
     _layout_clicks: int,
 ) -> Tuple[List[Dict], Dict, str]:
@@ -744,7 +776,7 @@ def sync_graph(
     selected_label = "None"
     for element in processed:
         data = element.get("data", {})
-        if data.get("id") == selected:
+        if selected and data.get("id") == selected:
             type_label = data.get("typeLabel", "")
             custom_label = data.get("customLabel", "")
             selected_label = f"{type_label}: {custom_label}"
