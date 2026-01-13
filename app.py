@@ -183,7 +183,8 @@ def default_stylesheet() -> List[Dict]:
 
 
 def initial_elements() -> List[Dict]:
-    return []
+    node_id = "node-root"
+    return [make_node(node_id, "Building", "building")]
 
 
 def legend_items() -> List[html.Li]:
