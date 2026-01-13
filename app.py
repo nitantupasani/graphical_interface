@@ -403,19 +403,6 @@ app.layout = html.Div(
     ],
 )
 
-app.clientside_callback(
-    """
-    function(n_clicks) {
-        if (!n_clicks) {
-            return window.dash_clientside.no_update;
-        }
-        return window._canvasDblClick || null;
-    }
-    """,
-    Output("canvas-dblclick-store", "data"),
-    Input("canvas-dblclick", "n_clicks"),
-)
-
 
 @callback(
     Output("elements-store", "data"),
