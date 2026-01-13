@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import time
 import uuid
 from dataclasses import dataclass
@@ -183,8 +184,7 @@ def default_stylesheet() -> List[Dict]:
 
 
 def initial_elements() -> List[Dict]:
-    node_id = "node-root"
-    return [make_node(node_id, "Building", "building")]
+    return [make_node("root", "Main Building", "building", position={"x": 0, "y": 0})]
 
 
 def legend_items() -> List[html.Li]:
@@ -313,6 +313,11 @@ app.layout = html.Div(
                             stylesheet=default_stylesheet(),
                             contextMenu=[
                                 {
+                                    "id": "add-node",
+                                    "label": "Add New Node Here",
+                                    "availableOn": ["core"],
+                                },
+                                {
                                     "id": "edit-title",
                                     "label": "Edit title",
                                     "availableOn": ["node"],
@@ -320,6 +325,11 @@ app.layout = html.Div(
                                 {
                                     "id": "change-type",
                                     "label": "Change node type",
+                                    "availableOn": ["node"],
+                                },
+                                {
+                                    "id": "delete-node",
+                                    "label": "Delete Node",
                                     "availableOn": ["node"],
                                 },
                             ],
@@ -338,7 +348,7 @@ app.layout = html.Div(
         ),
         dcc.Store(id="elements-store", data=initial_elements()),
         dcc.Store(id="collapsed-store", data=[]),
-        dcc.Store(id="selected-store", data="building"),
+        dcc.Store(id="selected-store", data="root"),
         dcc.Store(id="last-tap", data={"timestamp": 0, "node": None}),
         dcc.Store(id="right-click-node", data=None),
         dcc.Store(id="canvas-click-store", data=None),
@@ -535,6 +545,7 @@ def update_hierarchy(elements: List[Dict]) -> html.Ul:
     Output("edit-label-dialog", "style"),
     Output("label-input", "value"),
     Output("selected-store", "data", allow_duplicate=True),
+    Output("elements-store", "data", allow_duplicate=True),
     Input("graph", "contextMenuData"),
     State("elements-store", "data"),
     prevent_initial_call=True,
@@ -542,9 +553,10 @@ def update_hierarchy(elements: List[Dict]) -> html.Ul:
 def handle_context_action(
     context_data: Optional[Dict],
     elements: List[Dict],
-) -> Tuple[Dict, str, Optional[str], Dict, str, str]:
+) -> Tuple[Dict, str, Optional[str], Dict, str, str, List[Dict]]:
     if not context_data:
         return (
+            no_update,
             no_update,
             no_update,
             no_update,
@@ -555,6 +567,42 @@ def handle_context_action(
 
     menu_item = context_data.get("menuItemId")
     node_id = context_data.get("elementId")
+
+    if menu_item == "add-node":
+        new_id = f"node-{uuid.uuid4().hex[:6]}"
+        new_node = make_node(
+            new_id,
+            "New Node",
+            "building",
+            position={"x": random.randint(-100, 100), "y": random.randint(-100, 100)},
+        )
+        return (
+            {"display": "none"},
+            no_update,
+            no_update,
+            {"display": "none"},
+            no_update,
+            new_id,
+            elements + [new_node],
+        )
+
+    if menu_item == "delete-node" and node_id:
+        updated_elements = [
+            element
+            for element in elements
+            if element.get("data", {}).get("id") != node_id
+            and element.get("data", {}).get("source") != node_id
+            and element.get("data", {}).get("target") != node_id
+        ]
+        return (
+            {"display": "none"},
+            no_update,
+            no_update,
+            {"display": "none"},
+            no_update,
+            no_update,
+            updated_elements,
+        )
 
     current_type = "building"
     current_label = ""
@@ -573,6 +621,7 @@ def handle_context_action(
             {"display": "flex"},
             current_label,
             node_id,
+            no_update,
         )
 
     if menu_item == "change-type":
@@ -583,6 +632,7 @@ def handle_context_action(
             {"display": "none"},
             "",
             node_id,
+            no_update,
         )
 
     return (
@@ -592,6 +642,7 @@ def handle_context_action(
         {"display": "none"},
         "",
         node_id,
+        no_update,
     )
 
 
