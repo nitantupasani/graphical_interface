@@ -266,28 +266,6 @@ app.layout = html.Div(
             children=[
                 html.Aside(
                     children=[
-                        html.H2("Node Types"),
-                        html.Ul(legend_items(), id="legend"),
-                        html.Div(
-                            className="panel",
-                            children=[
-                                html.H3("Selection"),
-                                html.Div(id="selection-label", className="selection"),
-                                html.Div(
-                                    className="hint-text",
-                                    children=[
-                                        "• Single-click to select a node",
-                                        html.Br(),
-                                        "• Double-click a node to add a child",
-                                        html.Br(),
-                                        "• Use 'Edit Title' or 'Change Type' buttons",
-                                    ],
-                                ),
-                                html.Button("Edit Title", id="edit-title-btn", n_clicks=0, style={"marginBottom": "0.5rem"}),
-                                html.Button("Change Type", id="show-type-menu", n_clicks=0, style={"marginBottom": "0.5rem"}),
-                                html.Button("Toggle Collapse", id="toggle-collapse", n_clicks=0),
-                            ],
-                        ),
                         html.Div(
                             className="panel hierarchy",
                             children=[
@@ -295,6 +273,8 @@ app.layout = html.Div(
                                 html.Div(id="hierarchy-tree", className="hierarchy-tree"),
                             ],
                         ),
+                        html.H2("Node Types"),
+                        html.Ul(legend_items(), id="legend"),
                         html.Div(
                             className="panel",
                             children=[
@@ -360,6 +340,15 @@ app.layout = html.Div(
         dcc.Store(id="selected-store", data="building"),
         dcc.Store(id="last-tap", data={"timestamp": 0, "node": None}),
         dcc.Store(id="right-click-node", data=None),
+        html.Div(id="selection-label", className="selection", style={"display": "none"}),
+        html.Div(
+            style={"display": "none"},
+            children=[
+                html.Button("Edit Title", id="edit-title-btn", n_clicks=0),
+                html.Button("Change Type", id="show-type-menu", n_clicks=0),
+                html.Button("Toggle Collapse", id="toggle-collapse", n_clicks=0),
+            ],
+        ),
         html.Div(
             id="context-menu",
             className="context-menu",
@@ -430,7 +419,7 @@ def handle_node_tap(
     last_node = last_tap.get("node")
     last_timestamp = last_tap.get("timestamp", 0)
 
-    if last_node == tapped_id and (timestamp - last_timestamp) < 400:
+    if last_node == tapped_id and (timestamp - last_timestamp) < 650:
         position = None
         if tap_node:
             position = tap_node.get("position")
