@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 import dash
-from dash import Dash, Input, Output, State, callback, dcc, html
+from dash import Dash, Input, Output, State, callback, dcc, html, no_update
 import dash_cytoscape as cyto
 
 
@@ -42,7 +42,7 @@ def make_node(
     position: Optional[Dict[str, float]] = None,
 ) -> Dict:
     type_label = TYPE_MAP[type_key].label
-    combined_label = f"{type_label}\n{label}"
+    combined_label = f"{label}\n{type_label}"
     data = {
         "id": node_id,
         "label": combined_label,
@@ -117,50 +117,57 @@ def default_stylesheet() -> List[Dict]:
             "selector": "node",
             "style": {
                 "shape": "round-rectangle",
-                "background-color": "data(color)",
+                "background-color": "#ffffff",
+                "border-width": 2,
+                "border-color": "data(color)",
                 "label": "data(label)",
-                "color": "#f8fafc",
+                "color": "#0f172a",
                 "text-valign": "center",
                 "text-halign": "center",
                 "text-wrap": "wrap",
-                "text-max-width": "100px",
-                "text-outline-color": "#0f172a",
-                "text-outline-width": 2,
-                "font-size": 11,
-                "width": 110,
-                "height": 70,
+                "text-max-width": "110px",
+                "font-size": 10,
+                "font-weight": 600,
+                "line-height": 1.2,
+                "width": 120,
+                "height": 72,
                 "padding": 8,
-                "border-radius": 12,
+                "border-radius": 14,
+                "shadow-blur": 12,
+                "shadow-color": "#94a3b8",
+                "shadow-opacity": 0.35,
+                "shadow-offset-x": 0,
+                "shadow-offset-y": 4,
             },
         },
         {
             "selector": "node.building",
             "style": {
-                "width": 150,
-                "height": 100,
-                "font-size": 12,
-                "padding": 12,
-                "text-max-width": "130px",
+                "width": 160,
+                "height": 96,
+                "font-size": 11,
+                "padding": 10,
+                "text-max-width": "140px",
             },
         },
         {
             "selector": "edge",
             "style": {
-                "width": 3,
-                "line-color": "#94a3b8",
+                "width": 2,
+                "line-color": "#cbd5e1",
                 "curve-style": "bezier",
-                "target-arrow-color": "#94a3b8",
+                "target-arrow-color": "#cbd5e1",
                 "target-arrow-shape": "triangle",
             },
         },
-        {"selector": ".selected", "style": {"border-width": 4, "border-color": "#38bdf8"}},
+        {"selector": ".selected", "style": {"border-width": 3, "border-color": "#2563eb"}},
         {"selector": ".hidden", "style": {"display": "none"}},
     ]
     for node_type in NODE_TYPES:
         stylesheet.append(
             {
                 "selector": f'node[type = "{node_type.key}"]',
-                "style": {"background-color": node_type.color},
+                "style": {"border-color": node_type.color},
             }
         )
     return stylesheet
@@ -186,6 +193,41 @@ def legend_items() -> List[html.Li]:
     return items
 
 
+def build_hierarchy_view(elements: List[Dict]) -> html.Ul:
+    nodes = {el["data"]["id"]: el["data"] for el in elements if "source" not in el.get("data", {})}
+    children_map = build_children_map(elements)
+    root_nodes = [node_id for node_id, data in nodes.items() if "parent" not in data]
+
+    def render_list(node_ids: Iterable[str]) -> html.Ul:
+        items: List[html.Li] = []
+        for node_id in node_ids:
+            data = nodes.get(node_id, {})
+            label = data.get("customLabel", data.get("label", ""))
+            type_label = data.get("typeLabel", "")
+            children = children_map.get(node_id, [])
+            items.append(
+                html.Li(
+                    [
+                        html.Div(
+                            [
+                                html.Span(label, className="hierarchy-title"),
+                                html.Span(type_label, className="hierarchy-type"),
+                            ],
+                            className="hierarchy-row",
+                        ),
+                        render_list(children) if children else None,
+                    ],
+                    className="hierarchy-node",
+                )
+            )
+        return html.Ul(items, className="hierarchy-list")
+
+    if not root_nodes:
+        return html.Ul([html.Li("No nodes yet.", className="hierarchy-empty")], className="hierarchy-list")
+
+    return render_list(root_nodes)
+
+
 app = Dash(__name__)
 app.title = "Building Systems Graph"
 
@@ -198,8 +240,8 @@ app.layout = html.Div(
                     children=[
                         html.H1("Building Systems Graph"),
                         html.P(
-                            "Double-click nodes to edit labels inline. Double-click canvas to add child nodes. "
-                            "Right-click or Ctrl+click nodes to change type. Enable connection mode to link nodes."
+                            "Double-click a node to add a child. Right-click a node to edit its title or change type. "
+                            "Enable connection mode to link nodes."
                         ),
                     ]
                 ),
@@ -229,13 +271,21 @@ app.layout = html.Div(
                                     children=[
                                         "• Single-click to select a node",
                                         html.Br(),
-                                        "• Double-click to edit label",
+                                        "• Double-click a node to add a child",
                                         html.Br(),
-                                        "• Use 'Change Type' button to assign node type",
+                                        "• Use 'Edit Title' or 'Change Type' buttons",
                                     ],
                                 ),
+                                html.Button("Edit Title", id="edit-title-btn", n_clicks=0, style={"marginBottom": "0.5rem"}),
                                 html.Button("Change Type", id="show-type-menu", n_clicks=0, style={"marginBottom": "0.5rem"}),
                                 html.Button("Toggle Collapse", id="toggle-collapse", n_clicks=0),
+                            ],
+                        ),
+                        html.Div(
+                            className="panel hierarchy",
+                            children=[
+                                html.H3("Hierarchy"),
+                                html.Div(id="hierarchy-tree", className="hierarchy-tree"),
                             ],
                         ),
                         html.Div(
@@ -256,9 +306,8 @@ app.layout = html.Div(
                                 html.H3("Quick Tips"),
                                 html.Ul(
                                     [
-                                        html.Li("Double-click node to edit label inline."),
-                                        html.Li("Double-click canvas to add child node."),
-                                        html.Li("Right-click node to change its type."),
+                                        html.Li("Double-click a node to add a child."),
+                                        html.Li("Right-click a node to edit or change type."),
                                         html.Li("Enable connection mode to link nodes."),
                                         html.Li("Mouse wheel zooms, drag to pan canvas."),
                                     ]
@@ -274,6 +323,18 @@ app.layout = html.Div(
                             elements=initial_elements(),
                             layout={"name": "cose", "animate": True, "fit": True},
                             stylesheet=default_stylesheet(),
+                            contextMenu=[
+                                {
+                                    "id": "edit-title",
+                                    "label": "Edit title",
+                                    "availableOn": ["node"],
+                                },
+                                {
+                                    "id": "change-type",
+                                    "label": "Change node type",
+                                    "availableOn": ["node"],
+                                },
+                            ],
                             style={"width": "100%", "height": "100%"},
                             zoomingEnabled=True,
                             userZoomingEnabled=True,
@@ -291,16 +352,13 @@ app.layout = html.Div(
         dcc.Store(id="collapsed-store", data=[]),
         dcc.Store(id="selected-store", data="building"),
         dcc.Store(id="last-tap", data={"timestamp": 0, "node": None}),
-        dcc.Store(id="context-menu-visible", data=False),
-        dcc.Store(id="context-menu-pos", data={"x": 0, "y": 0}),
         dcc.Store(id="right-click-node", data=None),
-        dcc.Store(id="editing-node", data=None),
         html.Div(
             id="context-menu",
             className="context-menu",
             style={"display": "none"},
             children=[
-                html.H4("Node Type"),
+                html.H4("Change Node Type"),
                 dcc.Dropdown(
                     id="context-type-select",
                     options=[
@@ -324,7 +382,7 @@ app.layout = html.Div(
             className="edit-dialog",
             style={"display": "none"},
             children=[
-                html.H4("Edit Label"),
+                html.H4("Edit Title"),
                 dcc.Input(id="label-input", type="text", placeholder="Enter label", value=""),
                 html.Div(
                     className="dialog-actions",
@@ -343,194 +401,42 @@ app.layout = html.Div(
     Output("elements-store", "data"),
     Output("selected-store", "data", allow_duplicate=True),
     Output("last-tap", "data"),
-    Output("collapsed-store", "data", allow_duplicate=True),
     Input("graph", "tapNodeData"),
+    State("graph", "tapNode"),
     State("elements-store", "data"),
     State("selected-store", "data"),
     State("last-tap", "data"),
-    State("collapsed-store", "data"),
     prevent_initial_call=True,
 )
 def handle_node_tap(
     tap_node_data: Optional[Dict],
-    elements: List[Dict],
-    selected: str,
-    last_tap: Dict,
-    collapsed: List[str],
-) -> Tuple[List[Dict], str, Dict, List[str]]:
-    if not tap_node_data:
-        return elements, selected, last_tap, collapsed
-
-    tapped_id = tap_node_data.get("id")
-    timestamp = _now_ms()
-
-    # Just update selection, double-click editing handled by show_inline_edit
-    return elements, tapped_id, {"node": tapped_id, "timestamp": timestamp}, collapsed
-
-
-@callback(
-    Output("elements-store", "data", allow_duplicate=True),
-    Output("selected-store", "data", allow_duplicate=True),
-    Output("last-tap", "data", allow_duplicate=True),
-    Input("graph", "tapNode"),
-    State("graph", "tapNodeData"),
-    State("elements-store", "data"),
-    State("selected-store", "data"),
-    State("last-tap", "data"),
-    prevent_initial_call=True,
-)
-def handle_canvas_double_click(
     tap_node: Optional[Dict],
-    tap_node_data: Optional[Dict],
     elements: List[Dict],
     selected: str,
     last_tap: Dict,
 ) -> Tuple[List[Dict], str, Dict]:
-    # Only handle canvas clicks (not node clicks)
-    if tap_node_data:
-        # Node was clicked, not canvas
-        return elements, selected, last_tap
-    
-    if not tap_node:
-        return elements, selected, last_tap
-    
-    timestamp = _now_ms()
-    last_canvas_timestamp = last_tap.get("canvasTimestamp", 0)
-    
-    # Double-click detection (within 400ms)
-    if (timestamp - last_canvas_timestamp) < 400 and last_canvas_timestamp > 0:
-        # Create new node as child of selected node
-        position = tap_node.get("position", {"x": 0, "y": 0})
-        node_id = f"node-{uuid.uuid4().hex[:6]}"
-        new_node = make_node(node_id, "New Node", "sensors", parent=selected, position=position)
-        updated_last_tap = {**last_tap, "canvasTimestamp": 0, "timestamp": 0}
-        return elements + [new_node], node_id, updated_last_tap
-    
-    updated_last_tap = {**last_tap, "canvasTimestamp": timestamp}
-    return elements, selected, updated_last_tap
-
-
-@callback(
-    Output("context-menu", "style"),
-    Output("context-type-select", "value"),
-    Output("right-click-node", "data"),
-    Input("graph", "mouseoverNodeData"),
-    Input("show-type-menu", "n_clicks"),
-    State("graph", "mouseoverNodeData"),
-    State("selected-store", "data"),
-    State("elements-store", "data"),
-    prevent_initial_call=True,
-)
-def show_context_menu(
-    mouseover_data: Optional[Dict],
-    button_clicks: int,
-    current_mouseover: Optional[Dict],
-    selected: str,
-    elements: List[Dict],
-) -> Tuple[Dict, str, Optional[str]]:
-    ctx = dash.callback_context
-    if not ctx.triggered:
-        return {"display": "none"}, "building", None
-
-    trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
-
-    # Get current type of selected node
-    current_type = "building"
-    for element in elements:
-        data = element.get("data", {})
-        if data.get("id") == selected:
-            current_type = data.get("type", "building")
-            break
-
-    if trigger_id == "show-type-menu":
-        # Show context menu centered on screen from button click
-        return (
-            {"display": "flex", "left": "50%", "top": "50%", "transform": "translate(-50%, -50%)"},
-            current_type,
-            selected,
-        )
-
-    return {"display": "none"}, current_type, None
-
-
-@callback(
-    Output("context-menu", "style", allow_duplicate=True),
-    Output("context-type-select", "value", allow_duplicate=True),
-    Output("selected-store", "data", allow_duplicate=True),
-    Input("graph", "tapNodeData"),
-    State("graph", "tapNode"),
-    State("elements-store", "data"),
-    prevent_initial_call=True,
-)
-def handle_right_click(
-    tap_node_data: Optional[Dict],
-    tap_node: Optional[Dict],
-    elements: List[Dict],
-) -> Tuple[Dict, str, str]:
-    if not tap_node_data or not tap_node:
-        return {"display": "none"}, "building", "building"
-
-    # Check if it's a right-click by checking the event type
-    # For now, we'll show context menu on Ctrl+Click or long press
-    node_id = tap_node_data.get("id")
-    current_type = tap_node_data.get("type", "building")
-
-    # Get position from tap event
-    position = tap_node.get("renderedPosition", {"x": 0, "y": 0})
-    
-    # Position context menu near the node
-    menu_style = {
-        "display": "flex",
-        "position": "fixed",
-        "left": f"{position.get('x', 0) + 20}px",
-        "top": f"{position.get('y', 0) + 20}px",
-        "transform": "none",
-    }
-
-    return menu_style, current_type, node_id
-
-
-@callback(
-    Output("edit-label-dialog", "style"),
-    Output("label-input", "value"),
-    Input("graph", "tapNodeData"),
-    State("last-tap", "data"),
-    State("elements-store", "data"),
-    prevent_initial_call=True,
-)
-def show_inline_edit(
-    tap_node_data: Optional[Dict],
-    last_tap: Dict,
-    elements: List[Dict],
-) -> Tuple[Dict, str]:
     if not tap_node_data:
-        return {"display": "none"}, ""
+        return elements, selected, last_tap
 
     tapped_id = tap_node_data.get("id")
     timestamp = _now_ms()
     last_node = last_tap.get("node")
     last_timestamp = last_tap.get("timestamp", 0)
 
-    # Double-click detection for inline editing
     if last_node == tapped_id and (timestamp - last_timestamp) < 400:
-        current_label = tap_node_data.get("customLabel", "")
-        return {"display": "flex"}, current_label
+        position = None
+        if tap_node:
+            position = tap_node.get("position")
+        if position:
+            position = {
+                "x": position.get("x", 0) + 60,
+                "y": position.get("y", 0) + 40,
+            }
+        node_id = f"node-{uuid.uuid4().hex[:6]}"
+        new_node = make_node(node_id, "New Node", "sensors", parent=tapped_id, position=position)
+        return elements + [new_node], node_id, {"node": node_id, "timestamp": 0}
 
-    return {"display": "none"}, ""
-
-
-@callback(
-    Output("context-menu-pos", "data"),
-    Input("graph", "tapNode"),
-    prevent_initial_call=True,
-)
-def update_menu_position(
-    tap_node: Optional[Dict],
-) -> Dict:
-    if not tap_node:
-        return {"x": 0, "y": 0}
-    position = tap_node.get("renderedPosition", {"x": 0, "y": 0})
-    return position
+    return elements, tapped_id, {"node": tapped_id, "timestamp": timestamp}
 
 
 @callback(
@@ -563,6 +469,131 @@ def connect_nodes(
         return elements
 
     return elements + [make_edge(selected, target_id)]
+
+
+@callback(
+    Output("hierarchy-tree", "children"),
+    Input("elements-store", "data"),
+)
+def update_hierarchy(elements: List[Dict]) -> html.Ul:
+    return build_hierarchy_view(elements)
+
+
+@callback(
+    Output("context-menu", "style"),
+    Output("context-type-select", "value"),
+    Output("right-click-node", "data"),
+    Output("edit-label-dialog", "style"),
+    Output("label-input", "value"),
+    Output("selected-store", "data", allow_duplicate=True),
+    Input("graph", "contextMenuData"),
+    State("elements-store", "data"),
+    prevent_initial_call=True,
+)
+def handle_context_action(
+    context_data: Optional[Dict],
+    elements: List[Dict],
+) -> Tuple[Dict, str, Optional[str], Dict, str, str]:
+    if not context_data:
+        return (
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+        )
+
+    menu_item = context_data.get("menuItemId")
+    node_id = context_data.get("elementId")
+
+    current_type = "building"
+    current_label = ""
+    for element in elements:
+        data = element.get("data", {})
+        if data.get("id") == node_id:
+            current_type = data.get("type", "building")
+            current_label = data.get("customLabel", data.get("label", ""))
+            break
+
+    if menu_item == "edit-title":
+        return (
+            {"display": "none"},
+            no_update,
+            node_id,
+            {"display": "flex"},
+            current_label,
+            node_id,
+        )
+
+    if menu_item == "change-type":
+        return (
+            {"display": "flex", "left": "50%", "top": "50%", "transform": "translate(-50%, -50%)"},
+            current_type,
+            node_id,
+            {"display": "none"},
+            "",
+            node_id,
+        )
+
+    return (
+        {"display": "none"},
+        no_update,
+        node_id,
+        {"display": "none"},
+        "",
+        node_id,
+    )
+
+
+@callback(
+    Output("context-menu", "style", allow_duplicate=True),
+    Output("context-type-select", "value", allow_duplicate=True),
+    Output("right-click-node", "data", allow_duplicate=True),
+    Input("show-type-menu", "n_clicks"),
+    State("selected-store", "data"),
+    State("elements-store", "data"),
+    prevent_initial_call=True,
+)
+def show_type_dialog(
+    _clicks: int,
+    selected: str,
+    elements: List[Dict],
+) -> Tuple[Dict, str, Optional[str]]:
+    current_type = "building"
+    for element in elements:
+        data = element.get("data", {})
+        if data.get("id") == selected:
+            current_type = data.get("type", "building")
+            break
+    return (
+        {"display": "flex", "left": "50%", "top": "50%", "transform": "translate(-50%, -50%)"},
+        current_type,
+        selected,
+    )
+
+
+@callback(
+    Output("edit-label-dialog", "style", allow_duplicate=True),
+    Output("label-input", "value", allow_duplicate=True),
+    Output("selected-store", "data", allow_duplicate=True),
+    Input("edit-title-btn", "n_clicks"),
+    State("selected-store", "data"),
+    State("elements-store", "data"),
+    prevent_initial_call=True,
+)
+def show_edit_dialog(
+    _clicks: int,
+    selected: str,
+    elements: List[Dict],
+) -> Tuple[Dict, str, str]:
+    current_label = ""
+    for element in elements:
+        data = element.get("data", {})
+        if data.get("id") == selected:
+            current_label = data.get("customLabel", data.get("label", ""))
+            break
+    return {"display": "flex"}, current_label, selected
 
 
 @callback(
@@ -618,7 +649,7 @@ def handle_label_edit(
             data = element.get("data", {})
             if data.get("id") == selected:
                 type_label = data.get("typeLabel", "")
-                combined_label = f"{type_label}\n{new_label}"
+                combined_label = f"{new_label}\n{type_label}"
                 updated_data = {**data, "label": combined_label, "customLabel": new_label}
                 updated.append({**element, "data": updated_data})
             else:
@@ -665,7 +696,7 @@ def handle_context_menu(
             if data.get("id") == target_node:
                 custom_label = data.get("customLabel", data.get("label", ""))
                 type_label = TYPE_MAP[type_key].label
-                combined_label = f"{type_label}\n{custom_label}"
+                combined_label = f"{custom_label}\n{type_label}"
                 updated_data = {
                     **data,
                     "type": type_key,
