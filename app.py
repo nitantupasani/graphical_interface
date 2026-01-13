@@ -10,6 +10,9 @@ import dash
 from dash import Dash, Input, Output, State, callback, dcc, html, no_update
 import dash_cytoscape as cyto
 
+# Load extra layouts
+cyto.load_extra_layouts()
+
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
@@ -112,12 +115,15 @@ def apply_visibility(elements: List[Dict], collapsed: Set[str]) -> List[Dict]:
     return visible_elements
 
 
-def tint_color(hex_color: str, alpha: float) -> str:
-    hex_color = hex_color.lstrip("#")
-    r = int(hex_color[0:2], 16)
-    g = int(hex_color[2:4], 16)
-    b = int(hex_color[4:6], 16)
-    return f"rgba({r}, {g}, {b}, {alpha})"
+def get_next_child_type(parent_type: str) -> str:
+    """Returns the logical child type based on the parent."""
+    if parent_type == "building":
+        return "hot-water"
+    if "water" in parent_type or "loop" in parent_type:
+        return "sensors"
+    if parent_type == "heating-curve":
+        return "sensors"
+    return "sensors"
 
 
 def default_stylesheet() -> List[Dict]:
@@ -141,12 +147,6 @@ def default_stylesheet() -> List[Dict]:
                 "width": 120,
                 "height": 72,
                 "padding": 8,
-                "border-radius": 14,
-                "shadow-blur": 12,
-                "shadow-color": "#94a3b8",
-                "shadow-opacity": 0.35,
-                "shadow-offset-x": 0,
-                "shadow-offset-y": 4,
             },
         },
         {
@@ -173,7 +173,6 @@ def default_stylesheet() -> List[Dict]:
         {"selector": ".hidden", "style": {"display": "none"}},
     ]
     for node_type in NODE_TYPES:
-        alpha = 0.1 if node_type.key == "building" else 0.14
         stylesheet.append(
             {
                 "selector": f'node[type = "{node_type.key}"]',
@@ -248,8 +247,8 @@ app.layout = html.Div(
                     children=[
                         html.H1("Building Systems Graph"),
                         html.P(
-                            "Right-click the background to add a node. Double-click a node to add a child. "
-                            "Right-click a node to edit its title or change type. Enable connection mode to link nodes."
+                            "Right-Click Background to Add Building. Double-Click Node to Add Child. "
+                            "Right-Click Node to Edit."
                         ),
                     ]
                 ),
@@ -267,6 +266,20 @@ app.layout = html.Div(
             children=[
                 html.Aside(
                     children=[
+                        html.H2("Node Types"),
+                        html.Ul(legend_items(), id="legend"),
+                        html.Div(
+                            className="panel",
+                            children=[
+                                html.H3("Selection"),
+                                html.Div(id="selection-label", className="selection"),
+                                html.Button("Edit Title", id="edit-title-btn", n_clicks=0, style={"marginBottom": "0.5rem"}),
+                                html.Button(
+                                    "Change Type", id="show-type-menu", n_clicks=0, style={"marginBottom": "0.5rem"}
+                                ),
+                                html.Button("Toggle Collapse", id="toggle-collapse", n_clicks=0),
+                            ],
+                        ),
                         html.Div(
                             className="panel hierarchy",
                             children=[
@@ -274,8 +287,6 @@ app.layout = html.Div(
                                 html.Div(id="hierarchy-tree", className="hierarchy-tree"),
                             ],
                         ),
-                        html.H2("Node Types"),
-                        html.Ul(legend_items(), id="legend"),
                         html.Div(
                             className="panel",
                             children=[
@@ -285,21 +296,6 @@ app.layout = html.Div(
                                     options=[{"label": "Enable link mode", "value": "on"}],
                                     value=[],
                                     labelStyle={"display": "flex", "alignItems": "center"},
-                                ),
-                            ],
-                        ),
-                        html.Div(
-                            className="panel hint",
-                            children=[
-                                html.H3("Quick Tips"),
-                                html.Ul(
-                                    [
-                                        html.Li("Double-click a node to add a child."),
-                                        html.Li("Right-click a node to edit or change type."),
-                                        html.Li("Right-click the background to add a node."),
-                                        html.Li("Enable connection mode to link nodes."),
-                                        html.Li("Mouse wheel zooms, drag to pan canvas."),
-                                    ]
                                 ),
                             ],
                         ),
@@ -315,8 +311,8 @@ app.layout = html.Div(
                             contextMenu=[
                                 {
                                     "id": "add-node",
-                                    "label": "Add New Node Here",
-                                    "availableOn": ["core"],
+                                    "label": "Add New Building",
+                                    "availableOn": ["canvas"],
                                 },
                                 {
                                     "id": "edit-title",
@@ -341,7 +337,6 @@ app.layout = html.Div(
                             boxSelectionEnabled=False,
                             minZoom=0.3,
                             maxZoom=3,
-                            wheelSensitivity=0.1,
                         )
                     ]
                 ),
@@ -352,15 +347,6 @@ app.layout = html.Div(
         dcc.Store(id="selected-store", data="root"),
         dcc.Store(id="last-tap", data={"timestamp": 0, "node": None}),
         dcc.Store(id="right-click-node", data=None),
-        html.Div(id="selection-label", className="selection", style={"display": "none"}),
-        html.Div(
-            style={"display": "none"},
-            children=[
-                html.Button("Edit Title", id="edit-title-btn", n_clicks=0),
-                html.Button("Change Type", id="show-type-menu", n_clicks=0),
-                html.Button("Toggle Collapse", id="toggle-collapse", n_clicks=0),
-            ],
-        ),
         html.Div(
             id="context-menu",
             className="context-menu",
@@ -404,6 +390,7 @@ app.layout = html.Div(
     ],
 )
 
+
 @callback(
     Output("elements-store", "data"),
     Output("selected-store", "data", allow_duplicate=True),
@@ -426,11 +413,12 @@ def handle_node_tap(
         return elements, selected, last_tap
 
     tapped_id = tap_node_data.get("id")
+    parent_type = tap_node_data.get("type", "building")
     timestamp = _now_ms()
     last_node = last_tap.get("node")
     last_timestamp = last_tap.get("timestamp", 0)
 
-    if last_node == tapped_id and (timestamp - last_timestamp) < 650:
+    if last_node == tapped_id and (timestamp - last_timestamp) < 400:
         position = None
         if tap_node:
             position = tap_node.get("position")
@@ -439,8 +427,10 @@ def handle_node_tap(
                 "x": position.get("x", 0) + 60,
                 "y": position.get("y", 0) + 40,
             }
+
         node_id = f"node-{uuid.uuid4().hex[:6]}"
-        new_node = make_node(node_id, "New Node", "sensors", parent=tapped_id, position=position)
+        child_type = get_next_child_type(parent_type)
+        new_node = make_node(node_id, "New Node", child_type, parent=tapped_id, position=position)
         return elements + [new_node], node_id, {"node": node_id, "timestamp": 0}
 
     return elements, tapped_id, {"node": tapped_id, "timestamp": timestamp}
@@ -503,27 +493,17 @@ def handle_context_action(
     elements: List[Dict],
 ) -> Tuple[Dict, str, Optional[str], Dict, str, str, List[Dict]]:
     if not context_data:
-        return (
-            no_update,
-            no_update,
-            no_update,
-            no_update,
-            no_update,
-            no_update,
-            no_update,
-        )
+        return (no_update, no_update, no_update, no_update, no_update, no_update, no_update)
 
     menu_item = context_data.get("menuItemId")
     node_id = context_data.get("elementId")
 
     if menu_item == "add-node":
         new_id = f"node-{uuid.uuid4().hex[:6]}"
-        new_node = make_node(
-            new_id,
-            "New Node",
-            "building",
-            position={"x": random.randint(-100, 100), "y": random.randint(-100, 100)},
-        )
+        pos_x = random.randint(-100, 100)
+        pos_y = random.randint(-100, 100)
+        new_node = make_node(new_id, "New Building", "building", position={"x": pos_x, "y": pos_y})
+        updated_elements = elements + [new_node]
         return (
             {"display": "none"},
             no_update,
@@ -531,16 +511,16 @@ def handle_context_action(
             {"display": "none"},
             no_update,
             new_id,
-            elements + [new_node],
+            updated_elements,
         )
 
     if menu_item == "delete-node" and node_id:
         updated_elements = [
-            element
-            for element in elements
-            if element.get("data", {}).get("id") != node_id
-            and element.get("data", {}).get("source") != node_id
-            and element.get("data", {}).get("target") != node_id
+            el
+            for el in elements
+            if el.get("data", {}).get("id") != node_id
+            and el.get("data", {}).get("source") != node_id
+            and el.get("data", {}).get("target") != node_id
         ]
         return (
             {"display": "none"},
@@ -738,7 +718,6 @@ def handle_context_menu(
         return elements, {"display": "none"}
 
     if trigger_id == "context-apply":
-        # Use right-click node if available, otherwise use selected
         target_node = right_click_node if right_click_node else selected
         if not target_node:
             return elements, {"display": "none"}
